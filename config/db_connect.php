@@ -1,17 +1,13 @@
 <?php
-// config/db_connect.php - CONEXIÓN OPTIMIZADA PARA RAILWAY
+// config/db_connect.php - CONEXIÓN PARA RAILWAY
 
 // ============================================
-// HACK PARA EVITAR BLOQUEOS + CORS
+// HEADERS PARA CORS (Android/Web)
 // ============================================
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type, X-Requested-With, User-Agent, Accept, Authorization");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS, PUT, DELETE");
 header("Content-Type: application/json; charset=UTF-8");
-
-// Headers adicionales para evitar bloqueos
-header("X-Requested-With: XMLHttpRequest");
-header("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+header("Access-Control-Allow-Methods: POST, GET, OPTIONS, PUT, DELETE");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 
 // Manejar preflight OPTIONS
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
@@ -19,56 +15,74 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit();
 }
 
-// Pequeño delay opcional (solo si es necesario)
-// usleep(500000); // 0.5 segundos
-
 // ============================================
-// CONFIGURACIÓN RAILWAY - TUS DATOS
+// CONFIGURACIÓN DE BASE DE DATOS - RAILWAY
 // ============================================
 function getDBConnection() {
-    // DATOS DE TU RAILWAY (los mismos que usaste en MySQL Workbench)
-    $host = "shinkansen.proxy.rlwy.net";
-    $port = "14666";  // PUERTO ESPECÍFICO de Railway
-    $dbname = "dragonbite";  // Tu base de datos
-    $username = "root";  // Usuario
-    $password = "epXevObuJmPjsVklypoDvJMvYFbnbQlO";  // Contraseña
+    // 1. DATOS DE RAILWAY (variables de entorno)
+    $host = getenv('MYSQLHOST') ?: 'shinkansen.proxy.rlwy.net';
+    $port = getenv('MYSQLPORT') ?: '14666';
+    $dbname = getenv('MYSQLDATABASE') ?: 'dragonbite';
+    $username = getenv('MYSQLUSER') ?: 'root';
+    $password = getenv('MYSQLPASSWORD') ?: 'epXevObuJmPjsVklypoDvJMvYFbnbQlO';
+    
+    // 2. VALORES POR DEFECTO (backup)
+    if (empty($host)) $host = 'shinkansen.proxy.rlwy.net';
+    if (empty($port)) $port = '14666';
+    if (empty($dbname)) $dbname = 'dragonbite';
+    if (empty($username)) $username = 'root';
+    if (empty($password)) $password = 'epXevObuJmPjsVklypoDvJMvYFbnbQlO';
     
     try {
-        // CONEXIÓN CON PUERTO (IMPORTANTE para Railway)
+        // 3. CREAR DSN (Data Source Name)
         $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
         
+        // 4. OPCIONES DE PDO
         $options = [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-            PDO::ATTR_PERSISTENT => false,  // Mejor sin persistente en Railway
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,          // Lanzar excepciones en errores
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,     // Retornar arrays asociativos
+            PDO::ATTR_EMULATE_PREPARES => false,                  // Usar prepared statements nativos
+            PDO::ATTR_PERSISTENT => false,                        // No conexiones persistentes
             PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
-            PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false, // Para SSL si hay problemas
+            PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,      // Para SSL si hay problemas
         ];
         
-        // Crear conexión
+        // 5. CREAR CONEXIÓN
         $pdo = new PDO($dsn, $username, $password, $options);
         
-        // Configurar zona horaria (ajusta según tu país)
-        $pdo->exec("SET time_zone = '-05:00';");  // Colombia/Perú/México
+        // 6. CONFIGURACIÓN ADICIONAL
+        $pdo->exec("SET time_zone = '-05:00';"); // Zona horaria (ajustar según tu país)
         
+        // 7. RETORNAR CONEXIÓN
         return $pdo;
         
     } catch (PDOException $e) {
-        // Log seguro sin exponer datos sensibles
-        error_log("RAILWAY DB ERROR [".date("Y-m-d H:i:s")."]: " . $e->getMessage());
+        // 8. MANEJO DE ERRORES (seguro, sin exponer detalles)
+        error_log("RAILWAY DB ERROR [" . date("Y-m-d H:i:s") . "]: " . $e->getMessage());
         
-        // Respuesta segura para el cliente
+        // 9. RESPUESTA DE ERROR PARA EL CLIENTE
         http_response_code(500);
         echo json_encode([
             "success" => false,
-            "message" => "Error de conexión con el servidor",
-            "hint" => "Contacta al administrador"
+            "message" => "Error de conexión a la base de datos",
+            "hint" => "Contacta al administrador",
+            "timestamp" => date("Y-m-d H:i:s")
         ]);
         exit();
     }
 }
 
-// Retornar conexión por defecto
-return getDBConnection();
+// ============================================
+// INICIALIZAR CONEXIÓN GLOBAL
+// ============================================
+$conn = getDBConnection();
+
+// ============================================
+// VERIFICACIÓN DE CONEXIÓN (opcional)
+// ============================================
+try {
+    $conn->query("SELECT 1");
+} catch (PDOException $e) {
+    error_log("DB Health Check Failed: " . $e->getMessage());
+}
 ?>

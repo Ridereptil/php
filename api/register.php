@@ -1,114 +1,167 @@
 <?php
-// register.php - Manteniendo tu lógica anti-firewall
-require_once "config/db_connect.php";
+// api/register.php - REGISTRO DE USUARIOS PARA DRAGONBITE
 
-// =======================================
-// HACK ANTI-FIREWALL (conservado)
-// =======================================
+// ============================================
+// HEADERS OBLIGATORIOS
+// ============================================
+header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type, X-Requested-With, User-Agent, Accept, Authorization");
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 
-header("X-Requested-With: XMLHttpRequest");
-header("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-header("Accept: application/json");
-
-// Delay opcional (si necesitas mantenerlo)
-// sleep(1); // ⚠ Comenta esto en producción si no es necesario
-
-// ===============================
-// LEE CUERPO MANUAL
-// ===============================
-$raw = file_get_contents("php://input");
-
-if (!$raw || trim($raw) === '') {
-    echo json_encode(["success" => false, "message" => "No se recibió contenido"]);
-    exit;
+// Manejar preflight OPTIONS
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    http_response_code(200);
+    exit();
 }
 
-// Intentar decodificar JSON
-$input = json_decode($raw, true);
+// ============================================
+// INCLUIR CONEXIÓN A BASE DE DATOS
+// ============================================
+// ⚠️ IMPORTANTE: Usa __DIR__ para rutas absolutas
+require_once __DIR__ . '/../config/db_connect.php';
 
-if (!is_array($input) || json_last_error() !== JSON_ERROR_NONE) {
-    echo json_encode(["success" => false, "message" => "JSON inválido o mal formado"]);
-    exit;
+// ============================================
+// LEER Y VALIDAR JSON DE ENTRADA
+// ============================================
+$raw_input = file_get_contents("php://input");
+
+// Verificar que se recibió data
+if (empty($raw_input)) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "message" => "No se recibieron datos"
+    ]);
+    exit();
 }
 
-// ==========================
-// Obtener y validar variables
-// ==========================
-$nombre = trim($input["nombre"] ?? "");
-$email = trim($input["email"] ?? "");
-$password = trim($input["password"] ?? "");
-$telefono = trim($input["telefono"] ?? "");
-$direccion = trim($input["direccion"] ?? "");
+// Decodificar JSON
+$data = json_decode($raw_input, true);
 
-// Validación mejorada
+// Validar JSON
+if ($data === null || json_last_error() !== JSON_ERROR_NONE) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "message" => "JSON inválido o mal formado"
+    ]);
+    exit();
+}
+
+// ============================================
+// OBTENER Y LIMPIAR DATOS
+// ============================================
+$nombre = trim($data["nombre"] ?? "");
+$email = trim($data["email"] ?? "");
+$password = trim($data["password"] ?? "");
+$telefono = trim($data["telefono"] ?? "");
+$direccion = trim($data["direccion"] ?? "");
+
+// ============================================
+// VALIDACIÓN DE DATOS
+// ============================================
 $errors = [];
-if (strlen($nombre) < 2) $errors[] = "Nombre muy corto";
-if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Email inválido";
-if (strlen($password) < 6) $errors[] = "Contraseña mínimo 6 caracteres";
-if (strlen($telefono) < 8) $errors[] = "Teléfono inválido";
 
-if (!empty($errors)) {
-    echo json_encode(["success" => false, "message" => implode(", ", $errors)]);
-    exit;
+if (empty($nombre) || strlen($nombre) < 2) {
+    $errors[] = "El nombre debe tener al menos 2 caracteres";
 }
 
+if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $errors[] = "Email inválido";
+}
+
+if (empty($password) || strlen($password) < 6) {
+    $errors[] = "La contraseña debe tener al menos 6 caracteres";
+}
+
+if (empty($telefono) || strlen($telefono) < 8) {
+    $errors[] = "Teléfono inválido";
+}
+
+// Si hay errores, retornarlos
+if (!empty($errors)) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "message" => implode(", ", $errors)
+    ]);
+    exit();
+}
+
+// ============================================
+// PROCESAR REGISTRO EN BASE DE DATOS
+// ============================================
 try {
-    $db = getDBConnection();
-
-    // Verificar si email ya existe
-    $checkStmt = $db->prepare("SELECT id FROM usuarios WHERE email = ? LIMIT 1");
-    $checkStmt->execute([$email]);
-
-    if ($checkStmt->rowCount() > 0) {
-        echo json_encode(["success" => false, "message" => "El email ya está registrado"]);
-        exit;
+    // 1. Verificar si el email ya existe
+    $check_email_sql = "SELECT id FROM usuarios WHERE email = :email LIMIT 1";
+    $check_stmt = $conn->prepare($check_email_sql);
+    $check_stmt->execute([':email' => $email]);
+    
+    if ($check_stmt->rowCount() > 0) {
+        http_response_code(409); // Conflict
+        echo json_encode([
+            "success" => false,
+            "message" => "El email ya está registrado"
+        ]);
+        exit();
     }
 
-    // Insertar nuevo usuario con hash seguro
-    $insertStmt = $db->prepare("INSERT INTO usuarios (nombre, email, password, telefono, direccion, fecha_registro)
-                                VALUES (?, ?, ?, ?, ?, NOW())");
-
-    // Hash de contraseña (RECOMENDADO para seguridad)
+    // 2. Hash de contraseña (SEGURIDAD)
     $hashed_password = password_hash($password, PASSWORD_DEFAULT);
     
-    $insertStmt->execute([
-        $nombre,
-        $email,
-        $hashed_password,  // Guardado como hash
-        $telefono,
-        $direccion
+    // 3. Insertar nuevo usuario
+    $insert_sql = "INSERT INTO usuarios (nombre, email, password, telefono, direccion, fecha_registro) 
+                   VALUES (:nombre, :email, :password, :telefono, :direccion, NOW())";
+    
+    $insert_stmt = $conn->prepare($insert_sql);
+    $insert_stmt->execute([
+        ':nombre' => $nombre,
+        ':email' => $email,
+        ':password' => $hashed_password,
+        ':telefono' => $telefono,
+        ':direccion' => $direccion
     ]);
-
-    $id = $db->lastInsertId();
-
-    // Respuesta exitosa
+    
+    // 4. Obtener ID del nuevo usuario
+    $user_id = $conn->lastInsertId();
+    
+    // 5. Respuesta exitosa
+    http_response_code(201); // Created
     echo json_encode([
         "success" => true,
-        "message" => "¡Registro exitoso! Bienvenido/a",
+        "message" => "¡Usuario registrado exitosamente!",
         "data" => [
-            "id" => (int)$id,
+            "id" => (int)$user_id,
             "nombre" => $nombre,
             "email" => $email,
             "telefono" => $telefono,
             "direccion" => $direccion
         ]
     ]);
-
-} catch (PDOException $e) {
-    error_log("Register Error: " . $e->getMessage());
     
-    // Mensaje amigable sin exponer detalles técnicos
-    if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-        echo json_encode(["success" => false, "message" => "El email ya existe en el sistema"]);
-    } else {
-        echo json_encode(["success" => false, "message" => "Error al registrar. Intenta nuevamente."]);
-    }
+} catch (PDOException $e) {
+    // Manejo de errores de base de datos
+    error_log("Register PDO Error: " . $e->getMessage());
+    
+    http_response_code(500);
+    echo json_encode([
+        "success" => false,
+        "message" => "Error en el servidor al registrar usuario",
+        "error_code" => $e->getCode()
+    ]);
     
 } catch (Exception $e) {
-    error_log("General Register Error: " . $e->getMessage());
-    echo json_encode(["success" => false, "message" => "Error interno del servidor"]);
+    // Manejo de otros errores
+    error_log("Register General Error: " . $e->getMessage());
+    
+    http_response_code(500);
+    echo json_encode([
+        "success" => false,
+        "message" => "Error interno del servidor"
+    ]);
 }
+
+// Cerrar conexión (opcional, PDO lo hace automáticamente)
+$conn = null;
 ?>
