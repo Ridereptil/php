@@ -1,0 +1,20 @@
+RewriteEngine On
+
+# Redirigir todo a HTTPS si está disponible
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Headers CORS para Railway
+Header set Access-Control-Allow-Origin "*"
+Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+Header set Access-Control-Allow-Headers "Content-Type, X-Requested-With, Authorization, User-Agent, Accept"
+
+# Manejo de errores
+ErrorDocument 404 /index.php
+ErrorDocument 500 /index.php
+
+# Optimización para Railway
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/json
+</IfModule>

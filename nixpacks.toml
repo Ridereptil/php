@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["php82", "php82Extensions.mysqlnd", "php82Extensions.pdo", "php82Extensions.mbstring"]
+
+[phases.build]
+cmds = ["echo 'Fresh DragonBite build'"]
+
+[start]
+cmd = "php -S 0.0.0.0:$PORT -t ."

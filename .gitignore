@@ -1,0 +1,63 @@
+# Railway / PHP Backend .gitignore
+
+# Dependencias
+/vendor/
+/composer.lock
+
+# Archivos de entorno
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backup SQL
+*.sql
+*.bak
+
+# Temporal
+/tmp/
+/cache/# Railway / PHP Backend .gitignore
+
+# Dependencias
+/vendor/
+/composer.lock
+
+# Archivos de entorno
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backup SQL
+*.sql
+*.bak
+
+# Temporal
+/tmp/
+/cache/
